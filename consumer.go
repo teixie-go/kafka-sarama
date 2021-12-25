@@ -18,7 +18,7 @@ var (
 	KafkaVersion = "2.1.1"
 
 	// 默认标准输出日志
-	logger Logger = &StdLogger{logger: log.New(os.Stderr, "", log.LstdFlags)}
+	logger Logger = &stdLogger{logger: log.New(os.Stderr, "", log.LstdFlags)}
 )
 
 type ConsumerGroupConfig struct {
@@ -159,18 +159,18 @@ type Logger interface {
 	Errorf(format string, args ...interface{})
 }
 
-type StdLogger struct {
+type stdLogger struct {
 	logger *log.Logger
 }
 
-func (s *StdLogger) Info(args ...interface{}) {
+func (s *stdLogger) Info(args ...interface{}) {
 	s.logger.Println(args...)
 }
 
-func (s *StdLogger) Errorf(format string, args ...interface{}) {
+func (s *stdLogger) Errorf(format string, args ...interface{}) {
 	s.logger.Printf(format, args...)
 }
 
-func SetLogger(_logger Logger) {
-	logger = _logger
+func SetLogger(l Logger) {
+	logger = l
 }
