@@ -14,7 +14,7 @@ import (
 )
 
 var (
-	// 默认kafka版本号
+	// 默认kafka集群版本
 	KafkaVersion = "2.1.1"
 
 	// 默认标准输出日志
@@ -22,11 +22,11 @@ var (
 )
 
 type ConsumerGroupConfig struct {
-	// kafka版本
+	// kafka集群版本
 	Version string `yaml:"version" json:"version"`
 
-	// broker列表，英文","分隔
-	Brokers string `yaml:"brokers" json:"brokers"`
+	// kafka地址，英文","分隔
+	Addrs string `yaml:"addrs" json:"addrs"`
 
 	// 消费群组ID
 	GroupId string `yaml:"group_id" json:"group_id"`
@@ -61,13 +61,13 @@ func NewConsumerGroupClient(cfg ConsumerGroupConfig, consumer sarama.ConsumerGro
 		config.Consumer.Group.Rebalance.Strategy = sarama.BalanceStrategyRoundRobin
 	}
 
-	client, err := sarama.NewConsumerGroup(strings.Split(cfg.Brokers, ","), cfg.GroupId, config)
+	client, err := sarama.NewConsumerGroup(strings.Split(cfg.Addrs, ","), cfg.GroupId, config)
 	if err != nil {
 		return err
 	}
 	defer func() {
 		if err := client.Close(); err != nil {
-			logger.Errorf("Error closing client: %v", err)
+			logger.Errorf("Error closing consumer client: %v", err)
 		}
 	}()
 
@@ -102,7 +102,7 @@ func NewConsumerGroupClient(cfg ConsumerGroupConfig, consumer sarama.ConsumerGro
 	return ctx.Err()
 }
 
-// 获取kafka版本
+// 获取kafka集群版本
 func resolveVersion(version string) string {
 	if version != "" {
 		return version
