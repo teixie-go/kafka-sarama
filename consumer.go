@@ -15,7 +15,7 @@ import (
 
 var (
 	// 默认kafka版本号
-	DefaultVersion = "2.1.1"
+	KafkaVersion = "2.1.1"
 
 	// 默认标准输出日志
 	logger Logger = &StdLogger{logger: log.New(os.Stderr, "", log.LstdFlags)}
@@ -25,17 +25,20 @@ type ConsumerGroupConfig struct {
 	// kafka版本
 	Version string `yaml:"version" json:"version"`
 
-	// Broker服务器地址列表
-	Addrs string `yaml:"addrs" json:"addrs"`
+	// broker列表，英文","分隔
+	Brokers string `yaml:"brokers" json:"brokers"`
 
 	// 消费群组ID
 	GroupId string `yaml:"group_id" json:"group_id"`
 
-	// 消费主题列表
+	// 消费主题列表，英文","分隔
 	Topics string `yaml:"topics" json:"topics"`
+
+	// Consumer group partition assignment strategy (range, roundrobin, sticky), default: roundrobin
+	Assignor string `yaml:"assignor" json:"assignor"`
 }
 
-// 新建群组消费者客户端
+// NewConsumerGroupClient 新建群组消费者客户端
 func NewConsumerGroupClient(cfg ConsumerGroupConfig, consumer sarama.ConsumerGroupHandler) error {
 	version, err := sarama.ParseKafkaVersion(resolveVersion(cfg.Version))
 	if err != nil {
@@ -48,12 +51,25 @@ func NewConsumerGroupClient(cfg ConsumerGroupConfig, consumer sarama.ConsumerGro
 	 */
 	config := sarama.NewConfig()
 	config.Version = version
-	config.Consumer.Group.Rebalance.Strategy = sarama.BalanceStrategyRoundRobin
 
-	client, err := sarama.NewConsumerGroup(strings.Split(cfg.Addrs, ","), cfg.GroupId, config)
+	switch cfg.Assignor {
+	case "sticky":
+		config.Consumer.Group.Rebalance.Strategy = sarama.BalanceStrategySticky
+	case "range":
+		config.Consumer.Group.Rebalance.Strategy = sarama.BalanceStrategyRange
+	default:
+		config.Consumer.Group.Rebalance.Strategy = sarama.BalanceStrategyRoundRobin
+	}
+
+	client, err := sarama.NewConsumerGroup(strings.Split(cfg.Brokers, ","), cfg.GroupId, config)
 	if err != nil {
 		return err
 	}
+	defer func() {
+		if err := client.Close(); err != nil {
+			logger.Errorf("Error closing client: %v", err)
+		}
+	}()
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -80,20 +96,18 @@ func NewConsumerGroupClient(cfg ConsumerGroupConfig, consumer sarama.ConsumerGro
 	case <-sigterm:
 		logger.Info("sig terminatting")
 	}
+
 	cancel()
 	wg.Wait()
-	if err := client.Close(); err != nil {
-		logger.Errorf("Error closing client: %v", err)
-	}
-	return err
+	return ctx.Err()
 }
 
 // 获取kafka版本
-func resolveVersion(ver string) string {
-	if ver != "" {
-		return ver
+func resolveVersion(version string) string {
+	if version != "" {
+		return version
 	}
-	return DefaultVersion
+	return KafkaVersion
 }
 
 //------------------------------------------------------------------------------
@@ -149,12 +163,12 @@ type StdLogger struct {
 	logger *log.Logger
 }
 
-func (l *StdLogger) Info(args ...interface{}) {
-	l.logger.Println(args...)
+func (s *StdLogger) Info(args ...interface{}) {
+	s.logger.Println(args...)
 }
 
-func (l *StdLogger) Errorf(format string, args ...interface{}) {
-	l.logger.Printf(format, args...)
+func (s *StdLogger) Errorf(format string, args ...interface{}) {
+	s.logger.Printf(format, args...)
 }
 
 func SetLogger(_logger Logger) {
