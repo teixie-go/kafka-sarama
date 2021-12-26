@@ -1,8 +1,11 @@
 ## 开始使用
 ### 1.创建消费者
 ```
-func DemoMessageHandler(message *sarama.ConsumerMessage) error {
-	fmt.Printf("message: %v\n", string(message.Value))
+// 消费处理者示例
+type DemoMessageHandler struct {}
+
+func (DemoMessageHandler) Handle(message *sarama.ConsumerMessage) error {
+	fmt.Printf("handle message: %v\n", string(message.Value))
 	return nil
 }
 
@@ -14,7 +17,7 @@ func main() {
 	}
 	
 	// 实际使用时，这段代码通常需要放在goroutine中异步执行
-	err := kafka_sarama.NewConsumerGroupClient(config, kafka_sarama.NewConsumer(DemoMessageHandler))
+	err := kafka_sarama.NewConsumerGroupClient(config, kafka_sarama.NewConsumer(DemoMessageHandler{}))
 	if err != nil {
 	    panic(err)
 	}

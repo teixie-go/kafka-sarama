@@ -112,7 +112,9 @@ func resolveVersion(version string) string {
 
 //------------------------------------------------------------------------------
 
-type MessageHandler func(message *sarama.ConsumerMessage) error
+type MessageHandler interface {
+	Handle(message *sarama.ConsumerMessage) error
+}
 
 // Consumer represents a Sarama consumer group consumer
 type consumer struct {
@@ -137,7 +139,7 @@ func (c *consumer) ConsumeClaim(session sarama.ConsumerGroupSession, claim saram
 	// The `ConsumeClaim` itself is called within a goroutine, see:
 	// https://github.com/Shopify/sarama/blob/master/consumer_group.go#L27-L29
 	for message := range claim.Messages() {
-		err := c.messageHandler(message)
+		err := c.messageHandler.Handle(message)
 		if err != nil {
 			logger.Errorf("Message claimed error: message=%+v, err=%v", *message, err)
 		} else {
