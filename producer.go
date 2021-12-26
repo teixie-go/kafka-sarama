@@ -21,10 +21,10 @@ type Producer interface {
 	Close() error
 }
 
-func NewProducerMessage(topic, key string, value []byte) *sarama.ProducerMessage {
+func NewProducerMessage(topic string, key, value []byte) *sarama.ProducerMessage {
 	return &sarama.ProducerMessage{
 		Topic: topic,
-		Key:   sarama.StringEncoder(key),
+		Key:   sarama.ByteEncoder(key),
 		Value: sarama.ByteEncoder(value),
 	}
 }
