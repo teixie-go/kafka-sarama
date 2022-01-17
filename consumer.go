@@ -5,7 +5,6 @@ import (
 	"log"
 	"os"
 	"os/signal"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -14,54 +13,62 @@ import (
 )
 
 var (
-	// 默认kafka集群版本
-	KafkaVersion = "2.1.1"
-
 	// 默认标准输出日志
 	logger Logger = &stdLogger{logger: log.New(os.Stderr, "", log.LstdFlags)}
 )
 
-type ConsumerGroupConfig struct {
-	// kafka集群版本
-	Version string `yaml:"version" json:"version"`
+type (
+	consumerGroupClient struct {
+		brokers  []string
+		topics   []string
+		groupId  string
+		config   *sarama.Config
+		consumer sarama.ConsumerGroupHandler
+	}
 
-	// kafka地址，英文","分隔
-	Addrs string `yaml:"addrs" json:"addrs"`
+	ConsumerGroupOption func(*consumerGroupClient)
+)
 
-	// 消费群组ID
-	GroupId string `yaml:"group_id" json:"group_id"`
+func WithBrokers(brokers []string) ConsumerGroupOption {
+	return func(c *consumerGroupClient) {
+		c.brokers = brokers
+	}
+}
 
-	// 消费主题列表，英文","分隔
-	Topics string `yaml:"topics" json:"topics"`
+func WithGroupId(groupId string) ConsumerGroupOption {
+	return func(c *consumerGroupClient) {
+		c.groupId = groupId
+	}
+}
 
-	// Consumer group partition assignment strategy (range, roundrobin, sticky), default: roundrobin
-	Assignor string `yaml:"assignor" json:"assignor"`
+func WithTopics(topics []string) ConsumerGroupOption {
+	return func(c *consumerGroupClient) {
+		c.topics = topics
+	}
+}
+
+func WithConfig(config *sarama.Config) ConsumerGroupOption {
+	return func(c *consumerGroupClient) {
+		c.config = config
+	}
+}
+
+func WithConsumer(consumer sarama.ConsumerGroupHandler) ConsumerGroupOption {
+	return func(c *consumerGroupClient) {
+		c.consumer = consumer
+	}
 }
 
 // NewConsumerGroupClient 新建群组消费者客户端
-func NewConsumerGroupClient(cfg ConsumerGroupConfig, consumer sarama.ConsumerGroupHandler) error {
-	version, err := sarama.ParseKafkaVersion(resolveVersion(cfg.Version))
-	if err != nil {
-		return err
+func NewConsumerGroupClient(opts ...ConsumerGroupOption) error {
+	cli := &consumerGroupClient{
+		config: sarama.NewConfig(),
+	}
+	for _, o := range opts {
+		o(cli)
 	}
 
-	/**
-	 * Construct a new Sarama configuration.
-	 * The Kafka cluster version has to be defined before the consumer/producer is initialized.
-	 */
-	config := sarama.NewConfig()
-	config.Version = version
-
-	switch cfg.Assignor {
-	case "sticky":
-		config.Consumer.Group.Rebalance.Strategy = sarama.BalanceStrategySticky
-	case "range":
-		config.Consumer.Group.Rebalance.Strategy = sarama.BalanceStrategyRange
-	default:
-		config.Consumer.Group.Rebalance.Strategy = sarama.BalanceStrategyRoundRobin
-	}
-
-	client, err := sarama.NewConsumerGroup(strings.Split(cfg.Addrs, ","), cfg.GroupId, config)
+	client, err := sarama.NewConsumerGroup(cli.brokers, cli.groupId, cli.config)
 	if err != nil {
 		return err
 	}
@@ -78,7 +85,7 @@ func NewConsumerGroupClient(cfg ConsumerGroupConfig, consumer sarama.ConsumerGro
 	go func() {
 		defer wg.Done()
 		for {
-			if err := client.Consume(ctx, strings.Split(cfg.Topics, ","), consumer); err != nil {
+			if err := client.Consume(ctx, cli.topics, cli.consumer); err != nil {
 				logger.Errorf("Error from consumer: %v", err)
 				time.Sleep(5 * time.Second)
 			}
@@ -102,23 +109,15 @@ func NewConsumerGroupClient(cfg ConsumerGroupConfig, consumer sarama.ConsumerGro
 	return ctx.Err()
 }
 
-// 获取kafka集群版本
-func resolveVersion(version string) string {
-	if version != "" {
-		return version
-	}
-	return KafkaVersion
-}
-
 //------------------------------------------------------------------------------
 
-type MessageHandler interface {
-	Handle(message *sarama.ConsumerMessage) error
+type Claimer interface {
+	Claim(session sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim) error
 }
 
 // Consumer represents a Sarama consumer group consumer
 type consumer struct {
-	messageHandler MessageHandler
+	claimer Claimer
 }
 
 // Setup is run at the beginning of a new session, before ConsumeClaim
@@ -129,6 +128,7 @@ func (c *consumer) Setup(sarama.ConsumerGroupSession) error {
 
 // Cleanup is run at the end of a session, once all ConsumeClaim goroutines have exited
 func (c *consumer) Cleanup(sarama.ConsumerGroupSession) error {
+	logger.Info("Sarama consumer cleanup...")
 	return nil
 }
 
@@ -138,20 +138,12 @@ func (c *consumer) ConsumeClaim(session sarama.ConsumerGroupSession, claim saram
 	// Do not move the code below to a goroutine.
 	// The `ConsumeClaim` itself is called within a goroutine, see:
 	// https://github.com/Shopify/sarama/blob/master/consumer_group.go#L27-L29
-	for message := range claim.Messages() {
-		err := c.messageHandler.Handle(message)
-		if err != nil {
-			logger.Errorf("Message claimed error: message=%+v, err=%v", *message, err)
-		} else {
-			session.MarkMessage(message, "")
-		}
-	}
-	return nil
+	return c.claimer.Claim(session, claim)
 }
 
 // NewConsumer 新建消费者实例
-func NewConsumer(handler MessageHandler) sarama.ConsumerGroupHandler {
-	return &consumer{messageHandler: handler}
+func NewConsumer(claimer Claimer) sarama.ConsumerGroupHandler {
+	return &consumer{claimer: claimer}
 }
 
 //------------------------------------------------------------------------------

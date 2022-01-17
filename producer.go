@@ -1,8 +1,6 @@
 package kafka_sarama
 
 import (
-	"strings"
-
 	"github.com/Shopify/sarama"
 )
 
@@ -11,9 +9,25 @@ var (
 	_ Producer = (*asyncProducer)(nil)
 )
 
-type ProducerConfig struct {
-	// kafka地址，英文","分隔
-	Addrs string `yaml:"addrs" json:"addrs"`
+type (
+	producer struct {
+		brokers []string
+		config  *sarama.Config
+	}
+
+	ProducerOption func(*producer)
+)
+
+func WithProducerBrokers(brokers []string) ProducerOption {
+	return func(p *producer) {
+		p.brokers = brokers
+	}
+}
+
+func WithProducerConfig(config *sarama.Config) ProducerOption {
+	return func(p *producer) {
+		p.config = config
+	}
 }
 
 type Producer interface {
@@ -49,9 +63,15 @@ func (a *asyncProducer) Close() error {
 	return a.producer.Close()
 }
 
-func NewAsyncProducer(cfg ProducerConfig) (Producer, error) {
-	config := sarama.NewConfig()
-	client, err := sarama.NewClient(strings.Split(cfg.Addrs, ","), config)
+func NewAsyncProducer(opts ...ProducerOption) (Producer, error) {
+	p := &producer{
+		config: sarama.NewConfig(),
+	}
+	for _, o := range opts {
+		o(p)
+	}
+
+	client, err := sarama.NewClient(p.brokers, p.config)
 	if err != nil {
 		return nil, err
 	}
@@ -79,10 +99,16 @@ func (s *syncProducer) Close() error {
 	return s.producer.Close()
 }
 
-func NewSyncProducer(cfg ProducerConfig) (Producer, error) {
-	config := sarama.NewConfig()
-	config.Producer.Return.Successes = true
-	client, err := sarama.NewClient(strings.Split(cfg.Addrs, ","), config)
+func NewSyncProducer(opts ...ProducerOption) (Producer, error) {
+	p := &producer{
+		config: sarama.NewConfig(),
+	}
+	for _, o := range opts {
+		o(p)
+	}
+
+	p.config.Producer.Return.Successes = true
+	client, err := sarama.NewClient(p.brokers, p.config)
 	if err != nil {
 		return nil, err
 	}
