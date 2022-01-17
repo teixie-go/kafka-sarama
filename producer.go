@@ -9,25 +9,9 @@ var (
 	_ Producer = (*asyncProducer)(nil)
 )
 
-type (
-	producer struct {
-		brokers []string
-		config  *sarama.Config
-	}
-
-	ProducerOption func(*producer)
-)
-
-func WithProducerBrokers(brokers []string) ProducerOption {
-	return func(p *producer) {
-		p.brokers = brokers
-	}
-}
-
-func WithProducerConfig(config *sarama.Config) ProducerOption {
-	return func(p *producer) {
-		p.config = config
-	}
+type ProducerConfig struct {
+	Brokers []string
+	Config  *sarama.Config
 }
 
 type Producer interface {
@@ -63,15 +47,8 @@ func (a *asyncProducer) Close() error {
 	return a.producer.Close()
 }
 
-func NewAsyncProducer(opts ...ProducerOption) (Producer, error) {
-	p := &producer{
-		config: sarama.NewConfig(),
-	}
-	for _, o := range opts {
-		o(p)
-	}
-
-	client, err := sarama.NewClient(p.brokers, p.config)
+func NewAsyncProducer(cfg ProducerConfig) (Producer, error) {
+	client, err := sarama.NewClient(cfg.Brokers, cfg.Config)
 	if err != nil {
 		return nil, err
 	}
@@ -99,16 +76,9 @@ func (s *syncProducer) Close() error {
 	return s.producer.Close()
 }
 
-func NewSyncProducer(opts ...ProducerOption) (Producer, error) {
-	p := &producer{
-		config: sarama.NewConfig(),
-	}
-	for _, o := range opts {
-		o(p)
-	}
-
-	p.config.Producer.Return.Successes = true
-	client, err := sarama.NewClient(p.brokers, p.config)
+func NewSyncProducer(cfg ProducerConfig) (Producer, error) {
+	cfg.Config.Producer.Return.Successes = true
+	client, err := sarama.NewClient(cfg.Brokers, cfg.Config)
 	if err != nil {
 		return nil, err
 	}

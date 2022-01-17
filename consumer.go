@@ -17,58 +17,17 @@ var (
 	logger Logger = &stdLogger{logger: log.New(os.Stderr, "", log.LstdFlags)}
 )
 
-type (
-	consumerGroupClient struct {
-		brokers  []string
-		topics   []string
-		groupId  string
-		config   *sarama.Config
-		consumer sarama.ConsumerGroupHandler
-	}
-
-	ConsumerGroupOption func(*consumerGroupClient)
-)
-
-func WithBrokers(brokers []string) ConsumerGroupOption {
-	return func(c *consumerGroupClient) {
-		c.brokers = brokers
-	}
-}
-
-func WithGroupId(groupId string) ConsumerGroupOption {
-	return func(c *consumerGroupClient) {
-		c.groupId = groupId
-	}
-}
-
-func WithTopics(topics []string) ConsumerGroupOption {
-	return func(c *consumerGroupClient) {
-		c.topics = topics
-	}
-}
-
-func WithConfig(config *sarama.Config) ConsumerGroupOption {
-	return func(c *consumerGroupClient) {
-		c.config = config
-	}
-}
-
-func WithConsumer(consumer sarama.ConsumerGroupHandler) ConsumerGroupOption {
-	return func(c *consumerGroupClient) {
-		c.consumer = consumer
-	}
+type ConsumerGroupConfig struct {
+	Brokers  []string
+	Topics   []string
+	GroupId  string
+	Config   *sarama.Config
+	Consumer sarama.ConsumerGroupHandler
 }
 
 // NewConsumerGroupClient 新建群组消费者客户端
-func NewConsumerGroupClient(opts ...ConsumerGroupOption) error {
-	cli := &consumerGroupClient{
-		config: sarama.NewConfig(),
-	}
-	for _, o := range opts {
-		o(cli)
-	}
-
-	client, err := sarama.NewConsumerGroup(cli.brokers, cli.groupId, cli.config)
+func NewConsumerGroupClient(cfg ConsumerGroupConfig) error {
+	client, err := sarama.NewConsumerGroup(cfg.Brokers, cfg.GroupId, cfg.Config)
 	if err != nil {
 		return err
 	}
@@ -85,7 +44,7 @@ func NewConsumerGroupClient(opts ...ConsumerGroupOption) error {
 	go func() {
 		defer wg.Done()
 		for {
-			if err := client.Consume(ctx, cli.topics, cli.consumer); err != nil {
+			if err := client.Consume(ctx, cfg.Topics, cfg.Consumer); err != nil {
 				logger.Errorf("Error from consumer: %v", err)
 				time.Sleep(5 * time.Second)
 			}
